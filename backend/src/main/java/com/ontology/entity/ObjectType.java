@@ -1,0 +1,48 @@
+package com.ontology.entity;
+
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.Data;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+@Data
+@TableName("object_types")
+public class ObjectType {
+    
+    @TableId(type = IdType.INPUT)
+    private String id;
+    
+    private String name;
+    
+    private String description;
+    
+    private String icon;
+    
+    private String backingDataset;
+    
+    private String industryId;
+
+    private String projectId;
+    
+    private LocalDateTime createdAt;
+    
+    private LocalDateTime updatedAt;
+
+    private String status;
+
+    private String parentObjectType;
+
+    private Boolean showParentLink;
+
+    private String objectTypeCategory;
+
+    @TableField(exist = false)
+    private List<Property> properties;
+
+    @TableField(exist = false)
+    private List<ObjectTypeInterfaceMapping> implementedInterfaces;
+}

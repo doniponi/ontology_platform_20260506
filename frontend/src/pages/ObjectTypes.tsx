@@ -1,0 +1,1375 @@
+import React, { useState, useEffect } from 'react';
+import { InterfaceProperty, ObjectTypeImplementedInterface, OntologyData, ObjectType, Property, PropertyType } from '@/src/store/ontologyStore';
+import { Button } from '@/src/components/ui/button';
+import { Input } from '@/src/components/ui/input';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/src/components/ui/table';
+import { Badge } from '@/src/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from '@/src/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/src/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/src/components/ui/select';
+import { Label } from '@/src/components/ui/label';
+import { Search, Plus, Database, Key, FileText, Settings2, Table as TableIcon, Trash2, Sparkles, Loader2, Layers3, CheckCircle2, AlertCircle, Pencil } from 'lucide-react';
+import { toast } from 'sonner';
+import { api } from '@/src/api/client';
+
+export function ObjectTypes({ data, onUpdate }: { data: OntologyData, onUpdate: (data: OntologyData) => void }) {
+  const [search, setSearch] = useState('');
+  const [selectedObjectType, setSelectedObjectType] = useState<ObjectType | null>(null);
+
+  // New Object Type form state
+  const [newOtName, setNewOtName] = useState('');
+  const [newOtId, setNewOtId] = useState('');
+  const [newOtDataset, setNewOtDataset] = useState('');
+  const [newOtDesc, setNewOtDesc] = useState('');
+  const [newOtCategory, setNewOtCategory] = useState<'entity' | 'relation'>('entity');
+  const [creating, setCreating] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+
+  // New Property form state
+  const [newPropName, setNewPropName] = useState('');
+  const [newPropId, setNewPropId] = useState('');
+  const [newPropType, setNewPropType] = useState<PropertyType>('string');
+  const [newPropBaseCol, setNewPropBaseCol] = useState('');
+  const [newPropDesc, setNewPropDesc] = useState('');
+  const [newPropIsPrimaryKey, setNewPropIsPrimaryKey] = useState('0');
+  const [addingProp, setAddingProp] = useState(false);
+  const [propDialogOpen, setPropDialogOpen] = useState(false);
+  const [editingProperty, setEditingProperty] = useState<Property | null>(null);
+  const [implementationDialogOpen, setImplementationDialogOpen] = useState(false);
+  const [savingImplementation, setSavingImplementation] = useState(false);
+  const [editingImplementation, setEditingImplementation] = useState<ObjectTypeImplementedInterface | null>(null);
+  const [selectedInterfaceId, setSelectedInterfaceId] = useState('');
+  const [selectedInterfaceDetail, setSelectedInterfaceDetail] = useState<any | null>(null);
+  const [interfacePropertyMappings, setInterfacePropertyMappings] = useState<Record<string, string>>({});
+
+  // AI suggestions
+  const [suggestingProps, setSuggestingProps] = useState(false);
+  const [propSuggestions, setPropSuggestions] = useState<any[]>([]);
+
+  // Pagination & Tree Expansion
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  // Sub-object-type dialogs
+  const [subOtDialogOpen, setSubOtDialogOpen] = useState(false);
+  const [subOtParent, setSubOtParent] = useState<ObjectType | null>(null);
+  const [subOtName, setSubOtName] = useState('');
+  const [subOtId, setSubOtId] = useState('');
+  const [subOtDataset, setSubOtDataset] = useState('');
+  const [subOtDesc, setSubOtDesc] = useState('');
+  const [subOtShowParentLink, setSubOtShowParentLink] = useState(true);
+  const [subOtCategory, setSubOtCategory] = useState<'entity' | 'relation'>('entity');
+  const [savingSubOt, setSavingSubOt] = useState(false);
+
+  // Edit object type dialog
+  const [editOtDialogOpen, setEditOtDialogOpen] = useState(false);
+  const [editingObjectType, setEditingObjectType] = useState<ObjectType | null>(null);
+  const [editOtName, setEditOtName] = useState('');
+  const [editOtDataset, setEditOtDataset] = useState('');
+  const [editOtDesc, setEditOtDesc] = useState('');
+  const [editOtParent, setEditOtParent] = useState<string>('__ROOT__');
+  const [editOtShowParentLink, setEditOtShowParentLink] = useState(true);
+  const [editOtCategory, setEditOtCategory] = useState<'entity' | 'relation'>('entity');
+
+  // Delete confirmation dialog
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletingObjectType, setDeletingObjectType] = useState<ObjectType | null>(null);
+
+  // Dataset columns for mapping
+  const [datasetColumns, setDatasetColumns] = useState<Array<{
+    columnName: string;
+    columnComment: string;
+    dataType: string;
+    isNullable: string;
+  }>>([]);
+  const [loadingColumns, setLoadingColumns] = useState(false);
+
+  const filteredObjectTypes = data.objectTypes.filter(ot =>
+    ot.name.toLowerCase().includes(search.toLowerCase()) ||
+    ot.id.toLowerCase().includes(search.toLowerCase())
+  );
+
+  // Keep selectedObjectType in sync with data updates
+  const syncedSelected = selectedObjectType
+    ? data.objectTypes.find(ot => ot.id === selectedObjectType.id) || null
+    : null;
+
+  // Ensure properties array exists
+  const selectedProperties = syncedSelected?.properties || [];
+  const implementedInterfaces = syncedSelected?.implementedInterfaces || [];
+
+  // Load dataset columns when viewing datasource tab
+  useEffect(() => {
+    const loadColumns = async () => {
+      if (syncedSelected?.backingDataset) {
+        console.log('Loading columns for dataset:', syncedSelected.backingDataset);
+        setLoadingColumns(true);
+        try {
+          const res = await api.getDatasetColumns(syncedSelected.backingDataset);
+          console.log('Columns loaded:', res.data?.length || 0);
+          if (res.success) {
+            setDatasetColumns(res.data);
+          } else {
+            setDatasetColumns([]);
+            toast.error('获取数据集列信息失败');
+          }
+        } catch (err) {
+          console.error('Failed to load dataset columns:', err);
+          setDatasetColumns([]);
+        } finally {
+          setLoadingColumns(false);
+        }
+      } else {
+        setDatasetColumns([]);
+      }
+    };
+    loadColumns();
+  }, [syncedSelected?.id, syncedSelected?.backingDataset]);
+
+  const handleCreateObjectType = async () => {
+    if (!newOtName || !newOtId) {
+      toast.error('Name and ID are required.');
+      return;
+    }
+    setCreating(true);
+    try {
+      const result = await api.createObjectType({
+        id: newOtId,
+        name: newOtName,
+        description: newOtDesc,
+        backingDataset: newOtDataset,
+        objectTypeCategory: newOtCategory,
+      });
+      onUpdate(result.data);
+      setNewOtName(''); setNewOtId(''); setNewOtDataset(''); setNewOtDesc('');
+      setCreateDialogOpen(false);
+      toast.success(`Object type "${newOtName}" created.`);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleDeleteObjectType = async (ot: ObjectType) => {
+    try {
+      const result = await api.deleteObjectType(ot.id);
+      onUpdate(result.data);
+      toast.success(`Object type "${ot.name}" deleted.`);
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleAddProperty = async () => {
+    if (!syncedSelected || !newPropName) {
+      toast.error('请填写属性名称。');
+      return;
+    }
+    setAddingProp(true);
+    try {
+      const result = await api.addProperty(syncedSelected.id, {
+        id: newPropId.trim() || `p_${newPropName.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')}_${Date.now()}`,
+        name: newPropName,
+        type: newPropType,
+        description: newPropDesc,
+        isPrimaryKey: newPropIsPrimaryKey === '1' ? 1 : 0,
+        baseColumn: newPropBaseCol,
+      });
+      if (!result.success) {
+        toast.error(result.error || '添加属性失败');
+        return;
+      }
+      onUpdate(result.data);
+      resetPropertyForm();
+      setPropDialogOpen(false);
+      toast.success(`属性 "${newPropName}" 添加成功。`);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setAddingProp(false);
+    }
+  };
+
+  const handleSaveProperty = async () => {
+    if (!syncedSelected || !editingProperty || !newPropName) {
+      toast.error('Please fill in all required fields.');
+      return;
+    }
+    setAddingProp(true);
+    try {
+      const result = await api.updateProperty(syncedSelected.id, editingProperty.id, {
+        id: editingProperty.id,
+        name: newPropName,
+        type: newPropType,
+        description: newPropDesc,
+        isPrimaryKey: newPropIsPrimaryKey === '1' ? 1 : 0,
+        baseColumn: newPropBaseCol,
+      });
+      onUpdate(result.data);
+      resetPropertyForm();
+      setPropDialogOpen(false);
+      toast.success(`Property "${newPropName}" updated.`);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setAddingProp(false);
+    }
+  };
+
+  const handleDeleteProperty = async (prop: Property) => {
+    if (!syncedSelected) return;
+    try {
+      const result = await api.deleteProperty(syncedSelected.id, prop.id);
+      onUpdate(result.data);
+      toast.success(`Property "${prop.name}" deleted.`);
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const resetPropertyForm = () => {
+    setEditingProperty(null);
+    setNewPropName('');
+    setNewPropId('');
+    setNewPropType('string');
+    setNewPropBaseCol('');
+    setNewPropDesc('');
+    setNewPropIsPrimaryKey('0');
+  };
+
+  const openCreatePropertyDialog = () => {
+    resetPropertyForm();
+    setPropDialogOpen(true);
+  };
+
+  const openEditPropertyDialog = (property: Property) => {
+    setEditingProperty(property);
+    setNewPropName(property.name || '');
+    setNewPropId(property.id || '');
+    setNewPropType((property.type as PropertyType) || 'string');
+    setNewPropBaseCol(property.baseColumn || '');
+    setNewPropDesc(property.description || '');
+    setNewPropIsPrimaryKey(property.isPrimaryKey ? '1' : '0');
+    setPropDialogOpen(true);
+  };
+
+  // Update property's base column mapping
+  const handleUpdatePropertyColumn = async (propertyId: string, baseColumn: string) => {
+    if (!syncedSelected) return;
+    try {
+      // Find the property to update
+      const property = syncedSelected.properties.find(p => p.id === propertyId);
+      if (!property) return;
+
+      // Call API to update property
+      const result = await api.updateProperty(syncedSelected.id, propertyId, {
+        ...property,
+        isPrimaryKey: property.isPrimaryKey ? 1 : 0,
+        baseColumn: baseColumn || undefined,
+      });
+      onUpdate(result.data);
+      toast.success(`属性 "${property.name}" 已映射到数据列`);
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleSuggestProperties = async () => {
+    if (!syncedSelected) return;
+    setSuggestingProps(true);
+    try {
+      const result = await api.suggestProperties(
+        syncedSelected.name,
+        syncedSelected.description,
+        selectedProperties
+      );
+      setPropSuggestions(result.suggestions || []);
+      if (result.suggestions.length === 0) toast.info('No suggestions returned.');
+    } catch (err: any) {
+      toast.error(err.message.includes('GEMINI_API_KEY') ? 'Set GEMINI_API_KEY in .env to use AI features' : err.message);
+    } finally {
+      setSuggestingProps(false);
+    }
+  };
+
+  const handleAddSuggestedProperty = async (suggestion: any) => {
+    if (!syncedSelected) return;
+    const id = `p_${suggestion.name.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}`;
+    try {
+      const result = await api.addProperty(syncedSelected.id, {
+        id,
+        name: suggestion.name,
+        type: suggestion.type || 'string',
+        baseColumn: suggestion.baseColumn || '',
+      });
+      onUpdate(result.data);
+      setPropSuggestions(s => s.filter(x => x.name !== suggestion.name));
+      toast.success(`Property "${suggestion.name}" added.`);
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleSaveMetadata = async () => {
+    if (!syncedSelected) return;
+    try {
+      const result = await api.updateObjectType(syncedSelected.id, {
+        name: syncedSelected.name,
+        description: syncedSelected.description,
+        icon: syncedSelected.icon,
+        backingDataset: syncedSelected.backingDataset,
+      });
+      onUpdate(result.data);
+      toast.success('Changes saved.');
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  // ── Sub-Object-Type Helpers ───────────────────────────────────────────────
+
+  const getChildren = (parentId: string) => data.objectTypes.filter(ot => ot.parentObjectType === parentId);
+  const hasChildren = (parentId: string) => data.objectTypes.some(ot => ot.parentObjectType === parentId);
+
+  const getDepth = (ot: ObjectType): number => {
+    let depth = 1;
+    let current = ot;
+    while (current.parentObjectType) {
+      const parent = data.objectTypes.find(o => o.id === current.parentObjectType);
+      if (!parent) break;
+      depth++;
+      current = parent;
+    }
+    return depth;
+  };
+
+  const toggleExpanded = (id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // ── Sub-Object-Type CRUD Handlers ─────────────────────────────────────────
+
+  const openAddSubObjectTypeDialog = (parent: ObjectType) => {
+    setSubOtParent(parent);
+    setSubOtName('');
+    setSubOtId('');
+    setSubOtDataset('');
+    setSubOtDesc('');
+    setSubOtShowParentLink(true);
+    setSubOtCategory('entity');
+    setSubOtDialogOpen(true);
+  };
+
+  const openEditObjectTypeDialog = (ot: ObjectType) => {
+    setEditingObjectType(ot);
+    setEditOtName(ot.name);
+    setEditOtDataset(ot.backingDataset || '');
+    setEditOtDesc(ot.description || '');
+    setEditOtParent(ot.parentObjectType || '__ROOT__');
+    setEditOtShowParentLink(ot.showParentLink ?? true);
+    setEditOtCategory(ot.objectTypeCategory || 'entity');
+    setEditOtDialogOpen(true);
+  };
+
+  const openDeleteDialog = (ot: ObjectType) => {
+    setDeletingObjectType(ot);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleCreateSubObjectType = async () => {
+    if (!subOtName || !subOtId || !subOtParent) {
+      toast.error('名称和ID不能为空');
+      return;
+    }
+    setSavingSubOt(true);
+    try {
+      const result = await api.createObjectType({
+        id: subOtId,
+        name: subOtName,
+        description: subOtDesc,
+        backingDataset: subOtDataset,
+        parentObjectType: subOtParent.id,
+        showParentLink: subOtShowParentLink,
+        objectTypeCategory: subOtCategory,
+      });
+      if (result.success) {
+        onUpdate(result.data);
+        setSubOtDialogOpen(false);
+        toast.success(`子对象类型 "${subOtName}" 创建成功`);
+      } else {
+        toast.error(result.error || '创建失败');
+      }
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setSavingSubOt(false);
+    }
+  };
+
+  const handleSaveEditObjectType = async () => {
+    if (!editingObjectType || !editOtName) {
+      toast.error('名称不能为空');
+      return;
+    }
+    try {
+      const parentValue = editOtParent === '__ROOT__' ? null : editOtParent;
+      const payload: any = {
+        name: editOtName,
+        description: editOtDesc,
+        backingDataset: editOtDataset,
+        parentObjectType: parentValue,
+        objectTypeCategory: editOtCategory,
+      };
+      if (editingObjectType.parentObjectType) {
+        payload.showParentLink = editOtShowParentLink;
+      }
+      const result = await api.updateObjectType(editingObjectType.id, payload);
+      if (result.success) {
+        onUpdate(result.data);
+        setEditOtDialogOpen(false);
+        toast.success(`对象类型 "${editOtName}" 更新成功`);
+      } else {
+        toast.error(result.error || '更新失败');
+      }
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingObjectType) return;
+    try {
+      const result = await api.deleteObjectType(deletingObjectType.id);
+      if (result.success) {
+        onUpdate(result.data);
+        setDeleteDialogOpen(false);
+        toast.success(`对象类型 "${deletingObjectType.name}" 已删除`);
+      } else {
+        toast.error(result.error || '删除失败');
+      }
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setDeletingObjectType(null);
+    }
+  };
+
+  const openCreateImplementationDialog = () => {
+    setEditingImplementation(null);
+    setSelectedInterfaceId('');
+    setInterfacePropertyMappings({});
+    setImplementationDialogOpen(true);
+  };
+
+  const openEditImplementationDialog = (implementation: ObjectTypeImplementedInterface) => {
+    const nextMappings: Record<string, string> = {};
+    (implementation.propertyMappings || []).forEach((mapping) => {
+      nextMappings[mapping.interfacePropertyId] = mapping.propertyId;
+    });
+    setEditingImplementation(implementation);
+    setSelectedInterfaceId(implementation.interfaceId);
+    setInterfacePropertyMappings(nextMappings);
+    setImplementationDialogOpen(true);
+  };
+
+  const selectedInterface = data.interfaces.find((item) => item.id === selectedInterfaceId) || null;
+  const selectedInterfaceProperties = editingImplementation?.interfaceProperties || selectedInterfaceDetail?.properties || selectedInterface?.properties || [];
+  const availableInterfaces = data.interfaces.filter((item) => (
+    item.id === editingImplementation?.interfaceId ||
+    !implementedInterfaces.some((implementation) => implementation.interfaceId === item.id)
+  ));
+
+  useEffect(() => {
+    const loadSelectedInterfaceDetail = async () => {
+      if (!implementationDialogOpen || !selectedInterfaceId || editingImplementation) {
+        setSelectedInterfaceDetail(null);
+        return;
+      }
+      try {
+        const result = await api.getInterfaceDetail(selectedInterfaceId);
+        setSelectedInterfaceDetail(result.interface);
+      } catch (err: any) {
+        setSelectedInterfaceDetail(null);
+        toast.error(err.message || '加载 Interface 详情失败');
+      }
+    };
+    loadSelectedInterfaceDetail();
+  }, [implementationDialogOpen, selectedInterfaceId, editingImplementation]);
+
+  const handleSaveImplementation = async () => {
+    if (!syncedSelected || !selectedInterfaceId) {
+      toast.error('请选择要实现的 Interface');
+      return;
+    }
+
+    const payload = {
+      interfaceId: selectedInterfaceId,
+      propertyMappings: Object.entries(interfacePropertyMappings)
+        .filter(([, propertyId]) => Boolean(propertyId))
+        .map(([interfacePropertyId, propertyId]) => ({
+          interfacePropertyId,
+          propertyId,
+        })),
+    };
+
+    setSavingImplementation(true);
+    try {
+      const result = editingImplementation
+        ? await api.updateObjectTypeInterface(syncedSelected.id, editingImplementation.id, payload)
+        : await api.createObjectTypeInterface(syncedSelected.id, payload);
+      onUpdate(result.data);
+      setImplementationDialogOpen(false);
+      setEditingImplementation(null);
+      setSelectedInterfaceId('');
+      setSelectedInterfaceDetail(null);
+      setInterfacePropertyMappings({});
+      toast.success(editingImplementation ? 'Interface 实现关系已更新' : 'Interface 实现关系已创建');
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setSavingImplementation(false);
+    }
+  };
+
+  const handleDeleteImplementation = async (implementation: ObjectTypeImplementedInterface) => {
+    if (!syncedSelected) return;
+    if (!confirm(`确定要移除 ${syncedSelected.name} 对 ${implementation.interfaceName || implementation.interfaceId} 的实现关系吗？`)) {
+      return;
+    }
+    try {
+      const result = await api.deleteObjectTypeInterface(syncedSelected.id, implementation.id);
+      onUpdate(result.data);
+      toast.success('实现关系已删除');
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  // ── Detail View ─────────────────────────────────────────────────────────────
+  if (syncedSelected) {
+    // Debug log
+    console.log('Rendering detail view for:', syncedSelected.name, 'dataset:', syncedSelected.backingDataset);
+    return (
+      <div className="space-y-6 max-w-6xl mx-auto">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" onClick={() => { setSelectedObjectType(null); setPropSuggestions([]); }} className="text-slate-500">
+            ← 返回对象类型列表
+          </Button>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center">
+              <Database className="w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900">{syncedSelected.name}</h1>
+              <p className="text-slate-500 text-sm font-mono">{syncedSelected.id}</p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" className="text-red-500 border-red-200 hover:bg-red-50"
+              onClick={() => { handleDeleteObjectType(syncedSelected); setSelectedObjectType(null); }}>
+              <Trash2 className="w-4 h-4 mr-1" /> 删除
+            </Button>
+            <Button onClick={handleSaveMetadata}>保存更改</Button>
+          </div>
+        </div>
+
+        <Tabs defaultValue="properties" className="w-full">
+          <TabsList className="mb-4">
+            <TabsTrigger value="properties" className="gap-2"><FileText className="w-4 h-4" /> 属性</TabsTrigger>
+            <TabsTrigger value="interfaces" className="gap-2"><Layers3 className="w-4 h-4" /> Implements Interfaces</TabsTrigger>
+            <TabsTrigger value="datasource" className="gap-2"><TableIcon className="w-4 h-4" /> 数据源</TabsTrigger>
+            <TabsTrigger value="settings" className="gap-2"><Settings2 className="w-4 h-4" /> 设置</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="properties">
+            {/* AI Suggestions */}
+            {propSuggestions.length > 0 && (
+              <div className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-xl">
+                <p className="text-sm font-semibold text-purple-800 mb-3 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4" /> AI 建议的属性
+                </p>
+                <div className="space-y-2">
+                  {propSuggestions.map((s, i) => (
+                    <div key={i} className="flex items-center justify-between p-2 bg-white rounded-lg border border-purple-100">
+                      <div>
+                        <span className="font-medium text-sm text-slate-900">{s.name}</span>
+                        <Badge variant="secondary" className="ml-2 font-mono text-[10px] uppercase">{s.type}</Badge>
+                        <p className="text-xs text-slate-500 mt-0.5">{s.description}</p>
+                      </div>
+                      <Button size="sm" variant="outline" className="text-purple-600 border-purple-200 ml-4"
+                        onClick={() => handleAddSuggestedProperty(s)}>
+                        <Plus className="w-3 h-3 mr-1" /> 添加
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+              <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
+                <h3 className="font-semibold text-slate-900 flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-slate-500" />
+                  属性 ({selectedProperties.length})
+                </h3>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" className="h-8 gap-1 text-purple-600 border-purple-200"
+                    onClick={handleSuggestProperties} disabled={suggestingProps}>
+                    {suggestingProps ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                    AI 建议
+                  </Button>
+                  <Dialog open={propDialogOpen} onOpenChange={setPropDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button size="sm" variant="outline" className="h-8 gap-1" onClick={openCreatePropertyDialog}>
+                        <Plus className="w-3 h-3" /> 添加属性
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>{editingProperty ? '编辑属性' : '添加属性'}</DialogTitle>
+                        <DialogDescription>
+                          {editingProperty ? `更新 ${syncedSelected.name} 的属性定义。` : `为 ${syncedSelected.name} 定义一个新属性。`}
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                          <Label>显示名称 *</Label>
+                          <Input value={newPropName} onChange={e => setNewPropName(e.target.value)} placeholder="例如：邮箱地址" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>属性 ID *</Label>
+                          <Input value={newPropId} onChange={e => setNewPropId(e.target.value)} placeholder="例如：p_email" className="font-mono text-sm" disabled={!!editingProperty} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>类型</Label>
+                          <Select value={newPropType} onValueChange={(v: PropertyType) => setNewPropType(v)}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {(['string','integer','double','boolean','date','timestamp','geohash'] as PropertyType[]).map(t => (
+                                <SelectItem key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>是否主键</Label>
+                          <Select value={newPropIsPrimaryKey} onValueChange={setNewPropIsPrimaryKey}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="0">否</SelectItem>
+                              <SelectItem value="1">是</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>描述</Label>
+                          <Input value={newPropDesc} onChange={e => setNewPropDesc(e.target.value)} placeholder="例如：业务唯一标识" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>数据源列</Label>
+                          <Input value={newPropBaseCol} onChange={e => setNewPropBaseCol(e.target.value)} placeholder="例如：email_address（底层表字段名）" className="font-mono text-sm" />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => { setPropDialogOpen(false); resetPropertyForm(); }}>取消</Button>
+                        <Button onClick={editingProperty ? handleSaveProperty : handleAddProperty} disabled={addingProp}>
+                          {addingProp ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+                          {editingProperty ? '保存修改' : '添加属性'}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[200px]">属性 ID</TableHead>
+                    <TableHead>显示名称</TableHead>
+                    <TableHead>类型</TableHead>
+                    <TableHead>类型类</TableHead>
+                    <TableHead className="text-right">操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {selectedProperties.map(prop => (
+                    <TableRow key={prop.id}>
+                      <TableCell className="font-mono text-xs text-slate-600">
+                        <div className="flex items-center gap-1.5">
+                          {!!prop.isPrimaryKey && <Key className="w-3 h-3 text-amber-500" />}
+                          {prop.id}
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-medium text-slate-900">{prop.name}</TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" className="font-mono text-[10px] uppercase tracking-wider">{prop.type}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        {prop.typeClasses?.map(tc => (
+                          <Badge key={tc} variant="outline" className="mr-1 text-[10px] font-mono bg-slate-50 text-slate-500">{tc}</Badge>
+                        ))}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-400 hover:text-blue-600 hover:bg-blue-50"
+                            onClick={() => openEditPropertyDialog(prop)}>
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-red-400 hover:text-red-600 hover:bg-red-50"
+                            onClick={() => handleDeleteProperty(prop)}>
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {selectedProperties.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="h-16 text-center text-slate-400 text-sm">
+                        暂无属性。添加一个开始。
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="interfaces">
+            <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+              <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
+                <div>
+                  <h3 className="font-semibold text-slate-900 flex items-center gap-2">
+                    <Layers3 className="w-4 h-4 text-slate-500" />
+                    Implements Interfaces ({implementedInterfaces.length})
+                  </h3>
+                  <p className="text-sm text-slate-500 mt-1">为当前 Object Type 配置 Interface 实现关系与属性映射。</p>
+                </div>
+                <Dialog open={implementationDialogOpen} onOpenChange={setImplementationDialogOpen}>
+                  <Button size="sm" variant="outline" className="h-8 gap-1" onClick={openCreateImplementationDialog}>
+                    <Plus className="w-3 h-3" /> 实现 Interface
+                  </Button>
+                  <DialogContent className="max-w-3xl">
+                    <DialogHeader>
+                      <DialogTitle>{editingImplementation ? '编辑 Interface 实现' : '实现 Interface'}</DialogTitle>
+                      <DialogDescription>
+                        为 {syncedSelected.name} 选择一个 Interface，并完成必填属性映射。
+                      </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-5 py-4">
+                      <div className="space-y-2">
+                        <Label>Interface *</Label>
+                        <Select value={selectedInterfaceId} onValueChange={setSelectedInterfaceId} disabled={!!editingImplementation}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="选择 Interface..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableInterfaces.map((item) => (
+                              <SelectItem key={item.id} value={item.id}>
+                                {item.name} ({item.id})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {selectedInterfaceProperties.length > 0 && (
+                        <div className="space-y-3">
+                          <div>
+                            <h4 className="font-medium text-slate-900">属性映射</h4>
+                            <p className="text-sm text-slate-500">必填属性需要映射到当前 Object Type 的本地属性。</p>
+                          </div>
+                          <div className="border border-slate-200 rounded-lg overflow-hidden">
+                            <Table>
+                              <TableHeader className="bg-slate-50">
+                                <TableRow>
+                                  <TableHead>Interface 属性</TableHead>
+                                  <TableHead>映射到本地属性</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {selectedInterfaceProperties.map((property: InterfaceProperty) => (
+                                  <TableRow key={property.id}>
+                                    <TableCell>
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-medium text-slate-900">{property.name}</span>
+                                        {property.required ? (
+                                          <Badge variant="destructive" className="text-[10px] h-5">必填</Badge>
+                                        ) : (
+                                          <Badge variant="outline" className="text-[10px] h-5">选填</Badge>
+                                        )}
+                                      </div>
+                                      <div className="text-xs text-slate-500 mt-1 font-mono">{property.id}</div>
+                                    </TableCell>
+                                    <TableCell>
+                                      <Select
+                                        value={interfacePropertyMappings[property.id] || '__UNMAPPED__'}
+                                        onValueChange={(value) => setInterfacePropertyMappings((current) => ({
+                                          ...current,
+                                          [property.id]: value === '__UNMAPPED__' ? '' : value,
+                                        }))}
+                                      >
+                                        <SelectTrigger>
+                                          <SelectValue placeholder="选择本地属性..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="__UNMAPPED__">不映射</SelectItem>
+                                          {selectedProperties.map((candidate) => (
+                                            <SelectItem key={candidate.id} value={candidate.id}>
+                                              {candidate.name} ({candidate.id})
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setImplementationDialogOpen(false)}>取消</Button>
+                      <Button onClick={handleSaveImplementation} disabled={savingImplementation}>
+                        {savingImplementation ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+                        保存
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+
+              <div className="p-4 space-y-4">
+                {implementedInterfaces.length === 0 ? (
+                  <div className="border border-dashed border-slate-200 rounded-lg p-8 text-center text-slate-400">
+                    <Layers3 className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">当前还没有实现任何 Interface</p>
+                  </div>
+                ) : implementedInterfaces.map((implementation) => {
+                  const mappedPropertyIds = new Set((implementation.propertyMappings || []).map((item) => item.interfacePropertyId));
+                  const requiredProperties = (implementation.interfaceProperties || []).filter((item) => item.required);
+                  const missingRequiredCount = requiredProperties.filter((item) => !mappedPropertyIds.has(item.id)).length;
+
+                  return (
+                    <div key={implementation.id} className="border border-slate-200 rounded-lg p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-semibold text-slate-900">{implementation.interfaceName || implementation.interfaceId}</h4>
+                            <Badge variant={implementation.status === 'active' ? 'secondary' : 'outline'}>
+                              {implementation.status || 'pending'}
+                            </Badge>
+                            {implementation.mappingComplete ? (
+                              <Badge variant="outline" className="border-emerald-200 text-emerald-700">
+                                <CheckCircle2 className="w-3 h-3 mr-1" />
+                                必填映射完整
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="border-amber-200 text-amber-700">
+                                <AlertCircle className="w-3 h-3 mr-1" />
+                                缺少 {missingRequiredCount} 个必填映射
+                              </Badge>
+                            )}
+                          </div>
+                          {implementation.interfaceDescription && (
+                            <p className="text-sm text-slate-500 mt-1">{implementation.interfaceDescription}</p>
+                          )}
+                          <p className="text-xs text-slate-400 mt-2">
+                            已映射 {(implementation.propertyMappings || []).length} / {(implementation.interfaceProperties || []).length} 个属性
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button size="sm" variant="outline" onClick={() => openEditImplementationDialog(implementation)}>
+                            编辑映射
+                          </Button>
+                          <Button size="sm" variant="outline" className="text-red-500 border-red-200 hover:bg-red-50" onClick={() => handleDeleteImplementation(implementation)}>
+                            <Trash2 className="w-3.5 h-3.5 mr-1" />
+                            删除
+                          </Button>
+                        </div>
+                      </div>
+
+                      {(implementation.propertyMappings || []).length > 0 && (
+                        <div className="mt-4 border border-slate-100 rounded-md overflow-hidden">
+                          <Table>
+                            <TableHeader className="bg-slate-50">
+                              <TableRow>
+                                <TableHead>Interface 属性</TableHead>
+                                <TableHead>本地属性</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {(implementation.propertyMappings || []).map((mapping) => (
+                                <TableRow key={mapping.id}>
+                                  <TableCell className="font-medium">{mapping.interfacePropertyName || mapping.interfacePropertyId}</TableCell>
+                                  <TableCell>{mapping.propertyName || mapping.propertyId}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="datasource">
+            <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 space-y-6">
+              <div>
+                <h3 className="font-semibold text-slate-900">底层数据集</h3>
+                <p className="text-sm text-slate-500 mb-4">支持此对象类型的数据集。</p>
+                <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <Database className="w-5 h-5 text-blue-500" />
+                  <span className="font-mono text-sm text-slate-700">{syncedSelected?.backingDataset || '(未设置)'}</span>
+                </div>
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-900 mb-4">列映射</h3>
+                {loadingColumns ? (
+                  <div className="flex items-center justify-center py-8 text-slate-400">
+                    <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                    加载数据列...
+                  </div>
+                ) : !datasetColumns || datasetColumns.length === 0 ? (
+                  <div className="text-center py-8 text-slate-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                    <TableIcon className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">未找到数据列</p>
+                    <p className="text-xs mt-1">请确保数据集名称正确且表存在</p>
+                  </div>
+                ) : (
+                  <div className="border border-slate-200 rounded-lg overflow-hidden">
+                    <Table>
+                      <TableHeader className="bg-slate-50">
+                        <TableRow>
+                          <TableHead>属性</TableHead>
+                          <TableHead>映射到数据列</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {selectedProperties && selectedProperties.map(prop => (
+                          <TableRow key={prop?.id || Math.random()}>
+                            <TableCell className="font-medium text-slate-900">{prop?.name || 'Unknown'}</TableCell>
+                            <TableCell>
+                              <Select 
+                                value={prop?.baseColumn || '__UNMAPPED__'} 
+                                onValueChange={(value) => prop?.id && handleUpdatePropertyColumn(prop.id, value === '__UNMAPPED__' ? '' : value)}
+                              >
+                                <SelectTrigger className="w-[280px]">
+                                  <SelectValue placeholder="选择数据列..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="__UNMAPPED__">不映射</SelectItem>
+                                  {datasetColumns && datasetColumns.map(col => (
+                                    <SelectItem key={col?.columnName || Math.random()} value={col?.columnName || ''}>
+                                      <div className="flex flex-col items-start">
+                                        <span>{col?.columnComment || col?.columnName || 'Unknown'}</span>
+                                        <span className="text-xs text-slate-400 font-mono">{col?.columnName || ''} ({col?.dataType || ''})</span>
+                                      </div>
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="settings">
+            <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 space-y-6">
+              <div>
+                <h3 className="font-semibold text-slate-900 mb-4">元数据</h3>
+                <div className="space-y-4 max-w-xl">
+                  <div className="space-y-2">
+                    <Label>描述</Label>
+                    <Input defaultValue={syncedSelected.description} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>图标</Label>
+                    <Input defaultValue={syncedSelected.icon} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>底层数据集</Label>
+                    <Input defaultValue={syncedSelected.backingDataset} className="font-mono text-sm" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </div>
+    );
+  }
+
+  // ── List View ───────────────────────────────────────────────────────────────
+
+  // 一级对象类型（带搜索过滤）
+  const rootObjectTypes = data.objectTypes
+    .filter(ot => !ot.parentObjectType)
+    .filter(ot => ot.name.toLowerCase().includes(search.toLowerCase()) || ot.id.toLowerCase().includes(search.toLowerCase()));
+
+  const totalPages = Math.max(1, Math.ceil(rootObjectTypes.length / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedRoots = rootObjectTypes.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  // 渲染对象类型行（递归，支持子对象类型展开）
+  const renderObjectTypeRow = (ot: ObjectType, level: number = 0) => {
+    const isExpanded = expandedIds.has(ot.id);
+    const children = getChildren(ot.id);
+    const otHasChildren = children.length > 0;
+    const depth = getDepth(ot);
+    const canAddChild = true;
+
+    return (
+      <React.Fragment key={ot.id}>
+        <TableRow className="cursor-pointer hover:bg-slate-50" onClick={() => setSelectedObjectType(ot)}>
+          <TableCell className="w-10">
+            {otHasChildren ? (
+              <button
+                className="w-6 h-6 rounded bg-slate-100 text-slate-600 flex items-center justify-center text-xs font-bold hover:bg-slate-200 transition-colors"
+                onClick={e => { e.stopPropagation(); toggleExpanded(ot.id); }}
+              >
+                {isExpanded ? '−' : '+'}
+              </button>
+            ) : (
+              <span className="w-6 h-6 inline-block" />
+            )}
+          </TableCell>
+          <TableCell className="font-medium text-slate-900">
+            <div className="flex items-center gap-2" style={{ paddingLeft: `${level * 20}px` }}>
+              <div className="w-6 h-6 rounded bg-blue-50 text-blue-600 flex items-center justify-center">
+                <Database className="w-3 h-3" />
+              </div>
+              {ot.name}
+              {otHasChildren && (
+                <Badge variant="outline" className="text-[10px] h-5 bg-slate-50">{children.length} 子类型</Badge>
+              )}
+            </div>
+          </TableCell>
+          <TableCell className="font-mono text-xs text-slate-500">{ot.id}</TableCell>
+          <TableCell><Badge variant="secondary">{ot.properties.length}</Badge></TableCell>
+          <TableCell>
+            {ot.objectTypeCategory === 'relation' ? (
+              <Badge variant="outline" className="border-purple-200 text-purple-600 bg-purple-50">关系对象类型</Badge>
+            ) : (
+              <Badge variant="outline" className="border-blue-200 text-blue-600 bg-blue-50">实体对象类型</Badge>
+            )}
+          </TableCell>
+          <TableCell className="font-mono text-xs text-slate-500 max-w-[200px] truncate">{ot.backingDataset}</TableCell>
+          <TableCell>
+            {ot.status === 'pending' ? (
+              <Badge variant="outline" className="border-amber-200 text-amber-600 bg-amber-50">待审核</Badge>
+            ) : (
+              <Badge variant="outline" className="border-emerald-200 text-emerald-600 bg-emerald-50">已生效</Badge>
+            )}
+          </TableCell>
+          <TableCell className="text-right">
+            <div className="flex items-center justify-end gap-1">
+              {canAddChild && (
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-400 hover:text-blue-600 hover:bg-blue-50"
+                  title="新增子对象类型"
+                  onClick={e => { e.stopPropagation(); openAddSubObjectTypeDialog(ot); }}>
+                  <Plus className="w-4 h-4" />
+                </Button>
+              )}
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-slate-600 hover:bg-slate-50"
+                title="编辑"
+                onClick={e => { e.stopPropagation(); openEditObjectTypeDialog(ot); }}>
+                <Pencil className="w-4 h-4" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-red-400 hover:text-red-600 hover:bg-red-50"
+                title="删除"
+                onClick={e => { e.stopPropagation(); openDeleteDialog(ot); }}>
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </div>
+          </TableCell>
+        </TableRow>
+        {isExpanded && children.map(child => renderObjectTypeRow(child, level + 1))}
+      </React.Fragment>
+    );
+  };
+
+  // 所有可作为父对象类型的选项（排除自己及后代，防止循环）
+  const getAvailableParents = (excludeId?: string) => {
+    return data.objectTypes.filter(ot => {
+      if (ot.id === excludeId) return false;
+      if (excludeId && getChildren(excludeId).some(c => c.id === ot.id)) return false;
+      return true;
+    });
+  };
+
+  return (
+    <div className="space-y-6 max-w-6xl mx-auto">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">对象类型</h1>
+          <p className="text-slate-500 text-sm mt-1">定义本体的核心实体，支持层级化的子对象类型。</p>
+        </div>
+        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+          <DialogTrigger asChild>
+            <Button className="gap-2"><Plus className="w-4 h-4" /> 新建对象类型</Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>创建对象类型</DialogTitle>
+              <DialogDescription>在本体中定义一个新的一级实体。</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>显示名称 *</Label>
+                <Input value={newOtName} onChange={e => setNewOtName(e.target.value)} placeholder="例如：员工、航班、产品" />
+              </div>
+              <div className="space-y-2">
+                <Label>对象类型 ID *</Label>
+                <Input value={newOtId} onChange={e => setNewOtId(e.target.value)} placeholder="例如：ot_employee" className="font-mono text-sm" />
+              </div>
+              <div className="space-y-2">
+                <Label>描述</Label>
+                <Input value={newOtDesc} onChange={e => setNewOtDesc(e.target.value)} placeholder="这个实体代表什么？" />
+              </div>
+              <div className="space-y-2">
+                <Label>底层数据集</Label>
+                <Input value={newOtDataset} onChange={e => setNewOtDataset(e.target.value)} placeholder="例如：dataset_employees" className="font-mono text-sm" />
+              </div>
+              <div className="space-y-2">
+                <Label>类型</Label>
+                <Select value={newOtCategory} onValueChange={(v: any) => setNewOtCategory(v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="entity">实体对象类型</SelectItem>
+                    <SelectItem value="relation">关系对象类型</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>取消</Button>
+              <Button onClick={handleCreateObjectType} disabled={creating}>
+                {creating ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+                创建
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="flex items-center gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <div className="relative flex-1 max-w-md">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Input placeholder="搜索对象类型..." className="pl-9" value={search} onChange={e => { setSearch(e.target.value); setCurrentPage(1); }} />
+        </div>
+        <div className="text-sm text-slate-500">
+          共 {rootObjectTypes.length} 个一级对象类型
+        </div>
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-slate-50/50">
+              <TableHead className="w-10"></TableHead>
+              <TableHead>名称</TableHead>
+              <TableHead>对象类型 ID</TableHead>
+              <TableHead>属性</TableHead>
+              <TableHead>类型</TableHead>
+              <TableHead>底层数据集</TableHead>
+              <TableHead>状态</TableHead>
+              <TableHead className="text-right">操作</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {paginatedRoots.map(ot => renderObjectTypeRow(ot))}
+            {paginatedRoots.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={8} className="h-24 text-center text-slate-500">未找到对象类型。</TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={safePage <= 1}>
+            上一页
+          </Button>
+          <span className="text-sm text-slate-600">
+            第 {safePage} / {totalPages} 页
+          </span>
+          <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages}>
+            下一页
+          </Button>
+        </div>
+      )}
+
+      {/* ── Add Sub-Object-Type Dialog ─────────────────────────────────────── */}
+      <Dialog open={subOtDialogOpen} onOpenChange={setSubOtDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>新增子对象类型</DialogTitle>
+            <DialogDescription>
+              为「{subOtParent?.name}」创建一个子对象类型（当前层级：{subOtParent ? getDepth(subOtParent) : 0}）
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>显示名称 *</Label>
+              <Input value={subOtName} onChange={e => setSubOtName(e.target.value)} placeholder="例如：子类型名称" />
+            </div>
+            <div className="space-y-2">
+              <Label>对象类型 ID *</Label>
+              <Input value={subOtId} onChange={e => setSubOtId(e.target.value)} placeholder="例如：ot_sub_type" className="font-mono text-sm" />
+            </div>
+            <div className="space-y-2">
+              <Label>描述</Label>
+              <Input value={subOtDesc} onChange={e => setSubOtDesc(e.target.value)} placeholder="这个实体代表什么？" />
+            </div>
+            <div className="space-y-2">
+              <Label>底层数据集</Label>
+              <Input value={subOtDataset} onChange={e => setSubOtDataset(e.target.value)} placeholder="例如：dataset_sub" className="font-mono text-sm" />
+            </div>
+            <div className="space-y-2">
+              <Label>在图谱中显示「包含子对象类型」连接线</Label>
+              <Select value={subOtShowParentLink ? '1' : '0'} onValueChange={(v) => setSubOtShowParentLink(v === '1')}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">是</SelectItem>
+                  <SelectItem value="0">否</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>类型</Label>
+              <Select value={subOtCategory} onValueChange={(v: any) => setSubOtCategory(v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="entity">实体对象类型</SelectItem>
+                  <SelectItem value="relation">关系对象类型</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSubOtDialogOpen(false)}>取消</Button>
+            <Button onClick={handleCreateSubObjectType} disabled={savingSubOt}>
+              {savingSubOt ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+              创建
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Edit Object Type Dialog ────────────────────────────────────────── */}
+      <Dialog open={editOtDialogOpen} onOpenChange={setEditOtDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>编辑对象类型</DialogTitle>
+            <DialogDescription>修改对象类型的基本信息和层级关系。</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>显示名称 *</Label>
+              <Input value={editOtName} onChange={e => setEditOtName(e.target.value)} placeholder="对象类型名称" />
+            </div>
+            <div className="space-y-2">
+              <Label>描述</Label>
+              <Input value={editOtDesc} onChange={e => setEditOtDesc(e.target.value)} placeholder="描述信息" />
+            </div>
+            <div className="space-y-2">
+              <Label>底层数据集</Label>
+              <Input value={editOtDataset} onChange={e => setEditOtDataset(e.target.value)} placeholder="数据集名称" className="font-mono text-sm" />
+            </div>
+            <div className="space-y-2">
+              <Label>父对象类型</Label>
+              <Select value={editOtParent} onValueChange={setEditOtParent}>
+                <SelectTrigger>
+                  <SelectValue placeholder="选择父对象类型..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__ROOT__">（无，作为一级对象类型）</SelectItem>
+                  {getAvailableParents(editingObjectType?.id).map(ot => (
+                    <SelectItem key={ot.id} value={ot.id}>
+                      {ot.name} ({ot.id})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {editingObjectType?.parentObjectType && (
+              <div className="space-y-2">
+                <Label>在图谱中显示「包含子对象类型」连接线</Label>
+                <Select value={editOtShowParentLink ? '1' : '0'} onValueChange={(v) => setEditOtShowParentLink(v === '1')}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">是</SelectItem>
+                    <SelectItem value="0">否</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label>类型</Label>
+              <Select value={editOtCategory} onValueChange={(v: any) => setEditOtCategory(v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="entity">实体对象类型</SelectItem>
+                  <SelectItem value="relation">关系对象类型</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOtDialogOpen(false)}>取消</Button>
+            <Button onClick={handleSaveEditObjectType}>保存</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Delete Confirmation Dialog ─────────────────────────────────────── */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认删除</DialogTitle>
+            <DialogDescription>
+              确定要删除对象类型「{deletingObjectType?.name}」吗？
+              <br />
+              <span className="text-amber-600 text-sm">
+                注意：如果该对象类型存在子对象类型，删除将失败。
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>取消</Button>
+            <Button variant="destructive" onClick={handleConfirmDelete}>
+              确认删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

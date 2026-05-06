@@ -1,0 +1,212 @@
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Layout } from './components/Layout';
+import { Dashboard } from './pages/Dashboard';
+import { ObjectTypes } from './pages/ObjectTypes';
+import { LinkTypes } from './pages/LinkTypes';
+import { ActionTypes } from './pages/ActionTypes';
+import { FunctionTypes } from './pages/FunctionTypes';
+import { GraphView } from './pages/GraphView';
+import { Interfaces } from './pages/Interfaces';
+import { Settings } from './pages/Settings';
+import { AiStudio } from './pages/AiStudio';
+import { AgentStudio } from './pages/AgentStudio';
+import { ObjectExplorer } from './pages/ObjectExplorer';
+import { OntologyRules } from './pages/OntologyRules';
+import { EventMonitor } from './pages/EventMonitor';
+import { OntologyData } from './store/ontologyStore';
+import { Toaster } from 'sonner';
+import { api } from './api/client';
+import { Loader2 } from 'lucide-react';
+
+// 路由映射表
+export const ROUTES = {
+  dashboard: '/',
+  graph: '/graph',
+  objects: '/objects',
+  interfaces: '/interfaces',
+  explorer: '/explorer',
+  links: '/links',
+  actions: '/actions',
+  rules: '/rules',
+  functions: '/functions',
+  events: '/events',
+  agents: '/agents',
+  settings: '/settings',
+} as const;
+
+// 将路径映射回 tab id
+const PATH_TO_TAB: Record<string, string> = {
+  '/': 'dashboard',
+  '/graph': 'graph',
+  '/objects': 'objects',
+  '/interfaces': 'interfaces',
+  '/explorer': 'explorer',
+  '/links': 'links',
+  '/actions': 'actions',
+  '/rules': 'rules',
+  '/functions': 'functions',
+  '/events': 'events',
+  '/agents': 'agents',
+  '/settings': 'settings',
+};
+
+// 获取当前 tab 从路径
+function getTabFromPath(pathname: string): string {
+  return PATH_TO_TAB[pathname] || 'dashboard';
+}
+
+// 包装组件，提供数据和导航功能
+function PageWrapper({ 
+  children, 
+  ontology, 
+  setOntology, 
+  loading, 
+  error 
+}: { 
+  children: React.ReactNode;
+  ontology: OntologyData;
+  setOntology: (data: OntologyData) => void;
+  loading: boolean;
+  error: string | null;
+}) {
+  const navigate = useNavigate();
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64 gap-3 text-slate-500">
+        <Loader2 className="w-5 h-5 animate-spin" />
+        <span>Loading ontology...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <p className="text-red-500 font-medium mb-2">Failed to connect to API server</p>
+          <p className="text-slate-500 text-sm">{error}</p>
+          <p className="text-slate-400 text-xs mt-2">Make sure the backend is running: <code className="font-mono bg-slate-100 px-1 rounded">npm run dev:server</code></p>
+        </div>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}
+
+// 主应用内容
+function AppContent() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [ontology, setOntology] = useState<OntologyData>({ objectTypes: [], linkTypes: [], actionTypes: [], interfaces: [] });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [currentProjectId, setCurrentProjectId] = useState(() => api.getCurrentProjectId());
+
+  const activeTab = getTabFromPath(location.pathname);
+
+  const loadOntology = (projectId: string) => {
+    api.setCurrentProjectId(projectId);
+    setLoading(true);
+    setError(null);
+    api.getOntology()
+      .then(data => setOntology({
+        objectTypes: data.objectTypes || [],
+        linkTypes: data.linkTypes || [],
+        actionTypes: data.actionTypes || [],
+        interfaces: data.interfaces || [],
+      }))
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadOntology(currentProjectId);
+  }, [currentProjectId]);
+
+  const handleNavigate = (tab: string) => {
+    const path = ROUTES[tab as keyof typeof ROUTES];
+    if (path) {
+      navigate(path);
+    }
+  };
+
+  const handleProjectChange = (projectId: string) => {
+    setCurrentProjectId(projectId);
+  };
+
+  return (
+    <Layout activeTab={activeTab} onNavigate={handleNavigate} currentProjectId={currentProjectId} onProjectChange={handleProjectChange}>
+      <Routes>
+        <Route path="/" element={
+          <PageWrapper ontology={ontology} setOntology={setOntology} loading={loading} error={error}>
+            <Dashboard data={ontology} onNavigate={handleNavigate} />
+          </PageWrapper>
+        } />
+        <Route path="/graph" element={
+          <PageWrapper ontology={ontology} setOntology={setOntology} loading={loading} error={error}>
+            <GraphView data={ontology} />
+          </PageWrapper>
+        } />
+        <Route path="/objects" element={
+          <PageWrapper ontology={ontology} setOntology={setOntology} loading={loading} error={error}>
+            <ObjectTypes key={currentProjectId} data={ontology} onUpdate={setOntology} />
+          </PageWrapper>
+        } />
+        <Route path="/interfaces" element={
+          <PageWrapper ontology={ontology} setOntology={setOntology} loading={loading} error={error}>
+            <Interfaces key={currentProjectId} data={ontology} onUpdate={setOntology} />
+          </PageWrapper>
+        } />
+        <Route path="/explorer" element={
+          <PageWrapper ontology={ontology} setOntology={setOntology} loading={loading} error={error}>
+            <ObjectExplorer key={currentProjectId} data={ontology} />
+          </PageWrapper>
+        } />
+        <Route path="/links" element={
+          <PageWrapper ontology={ontology} setOntology={setOntology} loading={loading} error={error}>
+            <LinkTypes key={currentProjectId} data={ontology} onUpdate={setOntology} />
+          </PageWrapper>
+        } />
+        <Route path="/actions" element={
+          <PageWrapper ontology={ontology} setOntology={setOntology} loading={loading} error={error}>
+            <ActionTypes key={currentProjectId} />
+          </PageWrapper>
+        } />
+        <Route path="/rules" element={
+          <PageWrapper ontology={ontology} setOntology={setOntology} loading={loading} error={error}>
+            <OntologyRules key={currentProjectId} />
+          </PageWrapper>
+        } />
+        <Route path="/functions" element={
+          <PageWrapper ontology={ontology} setOntology={setOntology} loading={loading} error={error}>
+            <FunctionTypes key={currentProjectId} />
+          </PageWrapper>
+        } />
+        <Route path="/events" element={<EventMonitor />} />
+        <Route path="/agents" element={
+          <PageWrapper ontology={ontology} setOntology={setOntology} loading={loading} error={error}>
+            <AgentStudio key={currentProjectId} />
+          </PageWrapper>
+        } />
+        <Route path="/settings" element={
+          <PageWrapper ontology={ontology} setOntology={setOntology} loading={loading} error={error}>
+            <Settings />
+          </PageWrapper>
+        } />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Layout>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
+      <Toaster position="top-right" richColors />
+    </BrowserRouter>
+  );
+}
