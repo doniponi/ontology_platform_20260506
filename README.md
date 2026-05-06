@@ -45,20 +45,16 @@ git checkout codex/next-feature-dev
 先确保 MySQL 可用，然后创建空库：
 
 ```sql
-CREATE DATABASE ontology CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE ontology_20260506 CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
-再执行完整快照 SQL：
+再执行完整快照 SQL（文件位于项目根目录）：
 
 ```bash
-mysql --socket=/tmp/mysql.sock -uroot -p12345678 ontology < sql/2026-04-16_ontology_full_snapshot.sql
+mysql -h127.0.0.1 -P3306 -uroot -p<your_password> ontology_20260506 < ontology20260506.sql
 ```
 
-如果目标环境不是本地 socket，请改成对应的 host / port 方式，例如：
-
-```bash
-mysql -h127.0.0.1 -P3306 -uroot -p12345678 ontology < sql/2026-04-16_ontology_full_snapshot.sql
-```
+> 注：本项目使用独立数据库 `ontology_20260506`，与旧版本的 `ontology` 库互不干扰，可同机并存。
 
 ### 3. 安装依赖
 
@@ -93,9 +89,11 @@ npm run dev
 
 默认端口：
 
-- 前端：`3000`
+- 前端：`3010`（访问 http://localhost:3010）
 - BFF：`3001`
-- 后端：`8080`
+- 后端：`8081`
+
+> 端口与旧版本项目（前端 3000 / 后端 8080）错开，可在同一台机器上同时运行。
 
 ## 环境要求
 
@@ -112,15 +110,15 @@ npm run dev
 
 默认值：
 
-- DB: `ontology`
+- DB: `ontology_20260506`
 - User: `root`
-- Password: `12345678`
+- Password: 按本地 MySQL 实际密码填写
 
-BFF 常用环境变量：
+BFF 常用环境变量（复制 `.env.example` 为 `.env` 后修改）：
 
 ```env
 PORT=3001
-JAVA_BACKEND_URL=http://localhost:8080
+JAVA_BACKEND_URL=http://localhost:8081
 DEEPSEEK_API_KEY=your_key_here
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 ```
